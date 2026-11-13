@@ -21,41 +21,73 @@ public class GeminiService {
     @Value("${gemini.model:gemini-3.8-flash}")
     private String modelo;
 
+    // Opcional: defina no application.properties um modelo alternativo,
+    // ex: gemini.model.fallback=gemini-3.8-flash-lite
+    // Se não definir, o fallback é ignorado.
+    @Value("${gemini.model.fallback:}")
+    private String modeloFallback;
+
     private final RestTemplate restTemplate = new RestTemplate();
 
-    @SuppressWarnings("unchecked")    
-
-   public String gerar(String prompt) {
-    String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelo
-            + ":generateContent?key=" + apiKey;
-
-    Map<String, Object> body = Map.of(
-            "contents", List.of(
-                    Map.of("parts", List.of(Map.of("text", prompt)))
-            )
-    );
-
-    HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(MediaType.APPLICATION_JSON);
-    HttpEntity<Map<String, Object>> requisicao = new HttpEntity<>(body, headers);
-
-    int tentativas = 3;
-    Exception ultimoErro = null;
-
-    for (int i = 1; i <= tentativas; i++) {
+    public String gerar(String prompt) {
         try {
-            Map<String, Object> resposta = restTemplate.postForObject(url, requisicao, Map.class);
-            return extrairTexto(resposta);
-        } catch (org.springframework.web.client.HttpServerErrorException.ServiceUnavailable e) {
-            ultimoErro = e;
-            try { Thread.sleep(2000); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
-        } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Erro ao consultar o Gemini: " + e.getMessage());
+            return gerarComModelo(prompt, modelo, 3);
+        } catch (ResponseStatusException primeiraFalha) {
+            if (modeloFallback != null && !modeloFallback.isBlank()) {
+                try {
+                    return gerarComModelo(prompt, modeloFallback, 2);
+                } catch (ResponseStatusException segundaFalha) {
+                    throw segundaFalha;
+                }
+            }
+            throw primeiraFalha;
         }
     }
-    throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-            "O Gemini está sobrecarregado no momento, tente novamente em instantes: " + ultimoErro.getMessage());
-}
+
+    @SuppressWarnings("unchecked")
+    private String gerarComModelo(String prompt, String modeloUsado, int tentativas) {
+        String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modeloUsado
+                + ":generateContent?key=" + apiKey;
+
+        Map<String, Object> body = Map.of(
+                "contents", List.of(
+                        Map.of("parts", List.of(Map.of("text", prompt)))
+                )
+        );
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> requisicao = new HttpEntity<>(body, headers);
+
+        Exception ultimoErro = null;
+        long esperaMs = 2000;
+
+        for (int i = 1; i <= tentativas; i++) {
+            try {
+                Map<String, Object> resposta = restTemplate.postForObject(url, requisicao, Map.class);
+                return extrairTexto(resposta);
+            } catch (org.springframework.web.client.HttpServerErrorException.ServiceUnavailable e) {
+                ultimoErro = e;
+            } catch (org.springframework.web.client.HttpClientErrorException.TooManyRequests e) {
+                ultimoErro = e;
+            } catch (Exception e) {
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Erro ao consultar o Gemini: " + e.getMessage());
+            }
+
+            if (i < tentativas) {
+                try {
+                    Thread.sleep(esperaMs);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+                esperaMs *= 2; // backoff exponencial: 2s, 4s, 8s...
+            }
+        }
+
+        throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                "O Gemini (" + modeloUsado + ") está sobrecarregado no momento, tente novamente em instantes: "
+                        + (ultimoErro != null ? ultimoErro.getMessage() : ""));
+    }
 
     @SuppressWarnings("unchecked")
     private String extrairTexto(Map<String, Object> resposta) {
