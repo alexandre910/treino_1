@@ -15,16 +15,17 @@ import java.util.Map;
 @Service
 public class GeminiService {
 
-    @Value("${openai.api.key}")
+    @Value("${groq.api.key}")
     private String apiKey;
 
-    @Value("${openai.model:gpt-4o-mini}")
+    @Value("${groq.model:openai/gpt-oss-120b}")
     private String modelo;
 
     private final RestTemplate restTemplate = new RestTemplate();
 
+    @SuppressWarnings("unchecked")
     public String gerar(String prompt) {
-        String url = "https://api.openai.com/v1/chat/completions";
+        String url = "https://api.groq.com/openai/v1/chat/completions";
 
         Map<String, Object> body = Map.of(
                 "model", modelo,
@@ -51,7 +52,7 @@ public class GeminiService {
             } catch (org.springframework.web.client.HttpClientErrorException.TooManyRequests e) {
                 ultimoErro = e;
             } catch (Exception e) {
-                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Erro ao consultar a OpenAI: " + e.getMessage());
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Erro ao consultar o Groq: " + e.getMessage());
             }
 
             if (i < tentativas) {
@@ -65,7 +66,7 @@ public class GeminiService {
         }
 
         throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                "A OpenAI está indisponível no momento, tente novamente em instantes: "
+                "O Groq está indisponível no momento, tente novamente em instantes: "
                         + (ultimoErro != null ? ultimoErro.getMessage() : ""));
     }
 
@@ -73,7 +74,7 @@ public class GeminiService {
     private String extrairTexto(Map<String, Object> resposta) {
         List<Map<String, Object>> choices = (List<Map<String, Object>>) resposta.get("choices");
         if (choices == null || choices.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "A OpenAI não retornou resposta");
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "O Groq não retornou resposta");
         }
         Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
         return (String) message.get("content");
