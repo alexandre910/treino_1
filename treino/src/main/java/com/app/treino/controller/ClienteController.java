@@ -25,9 +25,10 @@ public class ClienteController {
     }
 
     @GetMapping("/{id}")
-    public Cliente buscar(@PathVariable Integer id) {
-        return service.buscar(id);
-    }
+public Cliente buscar(@PathVariable Integer id, @RequestHeader(value = "Authorization", required = false) String token) {
+    service.validarAcesso(token, id);
+    return service.buscar(id);
+}
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

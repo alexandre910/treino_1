@@ -4,5 +4,6 @@ import com.app.treino.model.Cliente;
 
 public record LoginResponse(
         Cliente cliente,
-        boolean questionarioPendente
+        boolean questionarioPendente,
+        String token
 ) {}

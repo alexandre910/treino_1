@@ -32,15 +32,18 @@ public class ClienteService {
     private final QuestionarioRepository questionarios;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
-    public ClienteService(ClienteRepository repository, InicianteRepository iniciantes,
-                           IntermediarioRepository intermediarios, AvancadoRepository avancados,
-                           QuestionarioRepository questionarios) {
-        this.repository = repository;
-        this.iniciantes = iniciantes;
-        this.intermediarios = intermediarios;
-        this.avancados = avancados;
-        this.questionarios = questionarios;
-    }
+   private final TokenService tokenService;
+
+public ClienteService(ClienteRepository repository, InicianteRepository iniciantes,
+                       IntermediarioRepository intermediarios, AvancadoRepository avancados,
+                       QuestionarioRepository questionarios, TokenService tokenService) {
+    this.repository = repository;
+    this.iniciantes = iniciantes;
+    this.intermediarios = intermediarios;
+    this.avancados = avancados;
+    this.questionarios = questionarios;
+    this.tokenService = tokenService;
+}
 
     public List<Cliente> listar() {
         return repository.findAll();
@@ -103,16 +106,28 @@ public class ClienteService {
     }
 
     public LoginResponse login(String email, String senha) {
-        Cliente cliente = repository.findByEmail(email)
-                .filter(c -> encoder.matches(senha, c.getSenha()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "E-mail ou senha inválidos"));
-        cliente.setSenha(null);
+    Cliente cliente = repository.findByEmail(email)
+            .filter(c -> encoder.matches(senha, c.getSenha()))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "E-mail ou senha inválidos"));
+    cliente.setSenha(null);
 
-        boolean questionarioPendente = "iniciante".equalsIgnoreCase(cliente.getNivelExperiencia())
-                && !questionarios.existsByIdUsuario(cliente.getId());
+    boolean questionarioPendente = "iniciante".equalsIgnoreCase(cliente.getNivelExperiencia())
+            && !questionarios.existsByIdUsuario(cliente.getId());
 
-        return new LoginResponse(cliente, questionarioPendente);
+    String token = tokenService.gerarToken(cliente.getId());
+
+    return new LoginResponse(cliente, questionarioPendente, token);
+}
+  public void validarAcesso(String token, Integer idSolicitado) {
+    if (token == null || token.isBlank()) {
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Token ausente");
     }
+    String tokenLimpo = token.startsWith("Bearer ") ? token.substring(7) : token;
+    Integer idDoToken = tokenService.buscarClienteId(tokenLimpo);
+    if (idDoToken == null || !idDoToken.equals(idSolicitado)) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acesso negado");
+    }
+}
 
     public Cliente avaliarEvolucaoDeNivel(Integer idUsuario, long totalSessoesConcluidas) {
         Cliente cliente = buscar(idUsuario);
