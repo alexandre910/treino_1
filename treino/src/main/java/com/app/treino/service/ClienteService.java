@@ -13,6 +13,7 @@ import com.app.treino.repository.QuestionarioRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.text.Normalizer;
 import java.util.List;
@@ -29,6 +30,7 @@ public class ClienteService {
     private final IntermediarioRepository intermediarios;
     private final AvancadoRepository avancados;
     private final QuestionarioRepository questionarios;
+    private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     public ClienteService(ClienteRepository repository, InicianteRepository iniciantes,
                            IntermediarioRepository intermediarios, AvancadoRepository avancados,
@@ -78,6 +80,8 @@ public class ClienteService {
         }
         cliente.setNivelExperiencia(nivel);
 
+        cliente.setSenha(encoder.encode(cliente.getSenha()));
+
         cliente.setId(null);
         Cliente salvo = repository.save(cliente);
 
@@ -100,7 +104,7 @@ public class ClienteService {
 
     public LoginResponse login(String email, String senha) {
         Cliente cliente = repository.findByEmail(email)
-                .filter(c -> c.getSenha().equals(senha))
+                .filter(c -> encoder.matches(senha, c.getSenha()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "E-mail ou senha inválidos"));
         cliente.setSenha(null);
 
